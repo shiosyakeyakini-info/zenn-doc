@@ -1,0 +1,13 @@
+title: "宣言的UIと状態の分離 ― Flutter/Riverpodによる設計原則"
+summary: "本書はFlutterやRiverpodを表面的には理解したけれども、もっと深く設計理論について知りたいと思ったときに読める内容を目指しました。"
+topics: ["flutter", "riverpod"]
+published: false # falseだと下書き
+price: 0 # 有料の場合200〜5000
+chapters:
+  - introduction
+  - section_1
+  - section_2
+  - section_3
+  - section_4
+  - section_5
+  - last
