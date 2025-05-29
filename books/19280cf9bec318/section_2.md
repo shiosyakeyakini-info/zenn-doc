@@ -253,3 +253,5 @@ class Sample extends HookWidget {
 ```
 
 のような形を取ることも設計上できたはずですね。実際、onSubmittedはウィジェットの引数として高階関数を取ります。あるいはCheckboxなどもonChangedを高階関数として取ります。これにはそもそも、FocusNodeやTextEditingController、あるいはNavigatorがなぜ宣言的な操作から離れて存在するのかという存在論的な問いへと繋がります。
+
+この理由については、第4章でより詳しく見ていきます。
