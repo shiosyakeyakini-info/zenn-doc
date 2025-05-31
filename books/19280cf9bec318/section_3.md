@@ -453,14 +453,315 @@ class InvalidateExampleWidget extends ConsumerWidget {
 
 
 ## 状態遷移図とフロー
-ビジネスロジックの状態遷移的観点と、`sealed class`の活用を説明する。
+
+`sealed class`は、複雑な状態を端的に、かつ型の整合性を取りながら移動させるのに適当な方法です。
+
+```dart
+
+@freezed
+sealed class AuthenticationState with _$AuthenticationState {
+    const factory AuthenticationState.notLogin() = NotLogin;
+    const factory AuthenticationState.logined({
+        required User user,
+    }) = Logined,
+}
+
+@freezed
+sealed class SignupState with _$SignupState {
+
+    /// サインイン前
+    const factory SignupState.provisional({
+        @Default('') String userId,
+        @Default('') String password,
+        @Default('') String mailAddress,
+    }) = Provisional;
+
+    /// メール認証中
+    const factory SignupState.mailAuthentication({
+        @Default('') String userId,
+        @Default('') String password,
+        @Default('') String mailAddress,
+    }) = MainAuthentication,
+
+    /// 本登録
+    const factory SignupState.definitive({
+        required Provisional data,
+        @Default('') String name,
+        @Default('') String address,
+        @Default('') Sexual sex,
+        // ...
+    }) = Definitive
+
+    const factory SignupState.authenticateTwoAuth({
+        required Provisional data,
+        @Default('') String name,
+        @Default('') String address,
+        @Default('') Sexual sex,
+        // ...
+        @Default('') String totpSecret,
+    })
+}
+
+```
+
+この状態をたとえばSignupStateNotifierが、それぞれ副作用的操作に応じて状態を遷移させていくことで、より宣言的に記述することができます。
+
+```dart
+Widget build(BuildContext context) {
+    final signupState = ref.watch(signupProvider);
+
+    return switch(state) {
+        // あまり頻繁に見る構文ではありませんが、このように表現できます。便利
+        Definitive(:final name) || AuthenticateTwoAuth(:final name) => Text('$name'),
+        Provisional() || MailAuthentication() => throw StateError('invalid state.'),
+    }
+}
+```
+
+現状はファクトリメソッドに対するスプレッド構文が無かったり、sealed classに対して特定のフィールドがあるか記述する方法が`is` `as` `switch`などに限られるといった構文上制約は強いです。このため、以前の状態からさらに進んだ文脈の状態を記述するためには、この点は冗長に書かざるを得ません。
+
+しかしながら、このように直和型の表現で状態遷移を行えば、この型では必ずこの値はあるはずとか、なければそれは仕様バグというものを見つけたり、不整合な状態を防いだりすることができるようになります。
+
+そしてウィジェットはどの状態であればどれを出す、というのをより宣言的に記述することができるのです。
+
 
 
 
 ## 非同期処理の状態管理
 
-多くの場合非同期処理を伴うことと、それは抽象化すると大抵の場合同じ状態遷移となるから、
-いわゆる初期表示だとか一覧画面の表示だとかいう例において、FutureProviderが大多数のケースで適切であることも説明する。
-そこに何かしら操作が介在するのであれば、そのときにNotifierを用いればよい。
+多くの副作用には非同期処理を伴います。そして世のアプリケーションは頻繁にこの非同期処理というものに苦しめられてきました。なぜなら、非同期処理の状態をより汎用的に扱う方法がなかったからです。
 
-また、イミュータブルであることがスレッドセーフであることはここで詳しく説明する。
+これはRiverpod抜きにしたDartのFutureもそうです。Futureはそもそもsealed classが登場するよりずっと前から存在するものですから、型安全的に状態を網羅することが不得意です。
+
+多くの場合非同期を伴う副作用は、その副作用自体がシステム全体で冪等として存在しない限りは、何度も実行されたくないです。これまでは、そのためにローディング中の状態をViewModelで保持したり、そもそもこの状態管理から逃げて[useDebounced](https://pub.dev/documentation/flutter_hooks/latest/flutter_hooks/useDebounced.html)的手法で逃げたりしながらモーダルインジケーターという悪しき風習に委ねる方法が取られてきました。
+
+非同期処理に対する状態も「状態」の一種である以上は、適正に管理しなければ不具合を引き起こす要因となります。
+
+さて、Riverpodではこの非同期の副作用を、より汎用的に簡単に扱うことができます。特にRiverpod 3.0からはmutationが試験的に導入されたため、多くのパターンの副作用に伴う非同期状態を簡単に扱えるようになりました。
+
+```dart
+@riverpod
+class BookNotifier extends _$BookNotifier {
+    @override
+    Future<List<Book>> build() async {
+        return await ref.read(apiClientProvider).getBooks();
+    }
+
+    @mutation
+    Future<void> loadNext() async {
+        final currentState = await future;
+        final lastBookId = currentState.last.id;
+        state = AsyncData([
+            ...currentState,
+            await ref.read(apiClientProvider).getBooks({untilId: lastBookId}),
+        ]);
+    }
+}
+```
+
+たったこれだけのコードですが、このNotifierが示す状態には、
+- 最初のBooksの初期取得（読込中）
+- 最初のBooksの初期取得エラー
+- 取得結果（完了時）
+- 最後尾以降の読み込みが行われていない状態
+- 最後尾の読み込みが行われている状態
+- 最後尾の読み込みがエラーとなった状態
+- 最後尾の読み込みが完了した状態（＝取得結果の更新とは別に）
+
+の8状態が網羅されています。この8状態を`AsyncValue`と`MutationState`によって表現可能なため、
+
+```dart
+class BookList extends HookConsumerWidget {
+    @override
+    Widget build(BuildContext context, WidgetRef ref) {
+        final book = ref.watch(bookNotifierProvider);
+        final loadNext = ref.watch(bookNotifierProvider.loadNext);
+        final scrollController = useScrollController();
+
+        useEffect(() {
+            void listener() {
+                if(controller.position.pixels != controller.position.maxScrollExtent) return;
+                if(loadNext.state is PendingMutation) return;
+                loadNext.call();
+            }
+            controller.addListener(listener);
+            return () => controller.removeListener(listener);
+        });
+
+        return switch(book) {
+            AsyncLoading() => Center(child: CircularProgressIndicator()),
+            AsyncError() => Column(children: [
+                Text('エラーが発生しました。'),
+                ElevatedButton(
+                    onPressed: () => ref.invalidate(bookNotifierProvider),
+                    child: Text('再読み込み')
+                ),
+            ]),
+            AsyncData(:final value) => ListView.builder(
+                controller: scrollController,
+                itemCount: value.length + (loadNext.state is PendingMutation ? 1 : 0),
+                itemBuilder: (BuildContext context, int index) {
+                    if (index == value.length) {
+                        return const Center(child: CircularProgressIndicator());
+                    }
+                    return ListTile(title: Text(value[index].title));                   
+                }
+            )
+        };
+    }
+}
+```
+
+このように非常に宣言的に記述可能になります。
+
+フロントエンドにおけるほとんどの処理は非同期処理でありながら、従来の多くのライブラリやフレームワークではこれを上手に扱うことを苦手としていました。しかし、RiverpodではFutureProviderやAsyncNotifierProviderを上手に活用することで、進行状況、エラー、完了状態を型安全的に、かつ宣言的に扱うことができるのです。さらにローディングやエラー時の制御、重複実行の防止も簡単に行うことができ、複雑な非同期処理もシンプルに状態管理として扱うことができます。
+
+特にMutationに関してはRiverpod 3.0からの実験的な機能ですが、これまではAsyncValueの状態を自分で保持する必要があったため、これを不要にして本質的な副作用処理に集中できるようになる機能です。
+
+### 共通エラー処理
+
+ところで、共通エラー処理というものについても多くの人々が悩まされてきたものだと思います。これもいくつかの方法が考えられます。
+
+すべての副作用を伴うエラー処理がダイアログを出すだけであれば、
+
+```dart
+ref.listen(bookNotifierProvider.loadNext, (_, next) {
+    switch(next) {
+        MutationError(:final error, :final stackTrace):
+            commonError(error, stackTrace);
+        default:
+    }
+});
+ref.listen(bookNotifierProvider, (_, next) {
+    switch(next) {
+        AsyncError(:final error, :final stackTrace)
+            commonError(error, stackTrace);
+    }
+});
+```
+のように、各Mutationや各AsyncErrorをlistenすればよいという話になります。Mutation<T>やAsyncValue<T>型自体のユーティリティにしてしまうことも考えられます。
+
+```dart
+
+void commonError<T>(
+    BuildContext context, AsyncValue<T>? previous, AsyncValue<T> after) {
+  if (after is! AsyncError) return;
+  showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('エラー'),
+          content: Text(after.error.toString()),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      });
+}
+
+ref.listen(bookNotifierProvider,
+    (previous, next) => commonError(context, previous, next));
+
+```
+
+もし、特定のエラー時は透過的に処理を行うエラーハンドリングがある場合、たとえばセッション切れの場合にログイン画面に戻すような場合を考えると、
+
+```dart
+```dart
+// エラー状態を管理するクラス
+@freezed
+sealed class AppErrorState with _$AppErrorState {
+    const factory AppErrorState.none() = None;
+    const factory AppErrorState.error({
+        required Object error,
+        required StackTrace stackTrace,
+        required Completer<void> completer,
+    }) = Error;
+}
+
+@riverpod
+class AppErrorNotifier extends _$AppErrorNotifier {
+    @override
+    AppErrorState build() => const AppErrorState.none();
+
+
+    // guard関数: エラー時に自動で状態をセットし、UI操作を待機
+    Future<T?> guard<T>(Future<T> Function() action) async {
+        try {
+            final result = await action();
+            clear();
+            return result;
+        } catch (e, st) {
+            // Completerを生成し、エラー状態に保持
+            final completer = Completer<void>();
+            state = AppErrorState.error(
+                error: e,
+                stackTrace: st,
+                completer: completer,
+            );
+            // エラー時、UI側でcompleterが完了するまで待機
+            await completer.future;
+            state = const AppErrorState.none();
+
+            // ここで例えばダイアログ表示後の状態変更、ログアウト処理などを行う
+            if(e is SessionErrorException) {
+                await ref.read(accountProvider).logout();
+            }
+
+
+            // 最終的なMutationやAsyncErrorへと昇華させる
+            rethrow;
+
+        }
+    }
+}
+
+// guardを使ったProvider例
+Future<void> guardedBooks(Ref ref) async {
+    try {
+        return await ref.read(appErrorProvider.notifier).guard(() async {
+            await ref.read(apiClientProvider).getBooks();
+        });
+    } catch(e,s) {
+        // 固有のエラー処理ロジック
+
+        // ここもウィジェットに伝播させるためにrethrow
+        rethrow;
+    }
+}
+
+// ウィジェット側: エラー時にダイアログを表示し、完了時にcompleterを完了させる
+ref.listen(appErrorProvider, (prev, next) async {
+    if (next is! Error) return;
+    await showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+            title: const Text('エラー'),
+            content: Text(next.error.toString()),
+            actions: [
+                TextButton(
+                    onPressed: () {
+                        Navigator.of(context).pop();
+                        next.completer.complete();
+                    },
+                    child: const Text('OK'),
+                ),
+            ],
+        ),
+    );
+});
+```
+
+この方法であれば、ウィジェット側にもAsyncErrorやMutationErrorとして状態が伝播し、さらに共通エラーハンドリングのようなことも行うことができ、さらにそれを操作待ちに依存させたりすることも可能となります。エラーの状態を配列で持てば、より堅牢になるでしょう。
+
+いずれにせよ、ウィジェットやUIは状態の写像であるという原理原則のもと、何の状態を監視するべきか、何の状態を見るべきかが明確であれば、このような共通エラーハンドリングも容易に行えることでしょう。
+
+
+
+
+## まとめ
+
+本章では、Riverpodを用いた状態管理において「状態の正規化」と「責務の分離」がなぜ重要か、またどのように実践できるかを解説しました。状態を意味論的な単位で分割し、各機能ごとに独立したProviderやNotifierを設計することで、再利用性や保守性が向上します。また、状態のライフサイクルや副作用の管理、非同期処理の扱いについても、Riverpodの仕組みを活用することで、より宣言的かつ安全に実装できることを示しました。アプリケーションの規模や要件に応じて、適切な粒度で状態を管理することが、長期的な開発効率や品質向上につながります。
