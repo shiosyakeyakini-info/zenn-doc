@@ -3,6 +3,7 @@ summary: "本書はFlutterやRiverpodを表面的には理解したけれども�
 topics: ["flutter", "riverpod"]
 published: false # falseだと下書き
 price: 0 # 有料の場合200〜5000
+allow_override: true
 chapters:
   - introduction
   - section_1

@@ -2,9 +2,6 @@
 title: "第４章　Flutterにおける構造的転換"
 ---
 
-## MVCやMVVMのフロントエンドにおける限界
-
-これまで歴史的には、
 
 ## View層が存在しないFlutterアーキテクチャ
 
@@ -134,7 +131,6 @@ class _TextManipulatorState extends State<TextManipulator> {
 
 つまり、Flutterにおける設計とは、状態と、状態に伴う画面の組み合わせです。もしも詳細設計書があるとすれば、状態と、状態に対応した画面の構成が網羅されていなければなりません。
 
-
 ## Flutterが完全に宣言的でもない理由
 
 Flutterにおいては、`showDialog`や`showSnackBar`といった**命令的**にUIを操作する方法がいくつかあります。あるいは、`Controller`という形で状態の変更を許すものがあります。
@@ -219,10 +215,118 @@ Widget buildAnimation(Duration elapsedTime) {
 
 Flutterは純粋関数潔癖症ではないので、いくつかの命令的動作を残すことによって、開発者がより速く、より簡単に実装できるようにしながら、それでいて宣言型UIとして基本的には宣言的に記述させることを目指しているといえるでしょう。
 
+## クリーンアーキテクチャとRiverpod
+
+これまでの議論から、Flutter&RiverpodにおいてはViewが最初から存在しないという話をしてきました。ということは、仮にMVCやMVVMを用いようとするなら、View不在なので、MCかMVMになってしまいます。そもそもVMやCという単位は一体なんなのか、原子化された状態単位なのか、原子化された状態に対してVMが必要なのかという奇妙な問いを投げかけてきます。Controllerは副作用を起こす契機として、たとえばTextEditingControllerのようなものが通じえますが、全体の副作用をRiverpodで状態管理しようとしたときに、そして責務の分割とコンポーネントの原子化を考えたときに、ViewModelと相性が合っていません。
+
+そして原子化しないならば、それはそれでコンポーネントの再利用性が失われます。
+
+ではクリーンアーキテクチャはどうでしょうか？
+
+ここでこれまで考えてきたことを整理すれば、「UIや状態は純粋関数的に表現されるべき」という話が根本にあります。しかしながら、クリーンアーキテクチャは明らかにオブジェクト指向パラダイムに位置し、根本的な世界観が異なる2つを結合しようとすることになります。
+
+### UseCase層だけを拝借する
+
+```dart
+
+
+/// UseCase層
+@riverpod
+class SearchUseCase {
+    Future<SearchResult> search(SearchRequest request) async {
+        return await ref.read(apiClientProvider).search(request);
+    }
+
+    Future<List<Station>> complete(String name) async {
+        return await ref.read(apiClientProvider).complete(name);
+    }
+}
+
+/// 検索結果を監視して結果を反映する
+/// 検索項目の変更に対して自動更新される（ref.invalidateとref.readを使う例も当然前述のようにあります）
+@riverpod
+Future<SearchResponse> search() {
+    final request = ref.watch(searchRequestProvider);
+    final result = await ref.read(searchUseCaseProvider).search(request);
+    return request;
+}
+
+/// 各検索項目を監視
+@riverpod
+SearchRequest searchRequest() {
+    final departure = ref.watch(departureProvider);
+    final arrive = ref.watch(arriveProvider);
+    final via = ref.watch(viaProvider);
+    // ...
+
+    return SearchRequest(
+        departure: departure,
+        arrive: arrive,
+        via: via,
+        // ...
+    );
+}
+
+/// 出発地
+@riverpod
+class Departure extends _$Departure {
+    @override String build() => '';
+
+    void updateText(String text) => state = text;
+
+}
+
+/// 出発地の入力補完
+@riverpoc
+class DepartureComplete extends $DepartureComplete {
+    @override List<Station> build() {
+        ref.listen(departureProvider, (_ , next) {
+            await complete();
+        });
+    };
+
+    Future<void> complete() async {
+        state = ref.read(searchUseCaseProvider).complete(
+            ref.read(departureProvider)
+        );
+    }
+}
+```
+
+このようになってしまい、結局のところUseCase層は解釈の余地が合っても、Presenterとはどれか、ControllerやViewModelとはどれの何かという純粋関数的原子性とオブジェクト指向の混濁が発生します。
+
+結局のところ、状態の依存グラフの方向性が単方向になし得ていたら、最終的にView(Flutter内部) -> Widget -> Presenter(多数のProvider) -> UseCaseという根本的原理原則は変わらないのですから、Viewがそもそもない上にPresenterという枠組みに必ず収める必要もないのでは？それは原子的なパラダイムによる状態管理でよいのでは？という話になるでしょうか。
+
+### あくまでViewModelを踏襲する
+
+この方法も考えられます。前章の通り、Riverpodは原子的状態管理を強要するライブラリではありません。そのViewModelと呼ぶ単位がどのような単位か、そもそもそのような単位が必要かという議論は置いておいて、クリーンアーキテクチャをあくまで依存グラフによるものではなくViewModelという単位で行うのだという話になれば、クリーンアーキテクチャ的には明瞭になります。**ただしコンポーネントの再利用性はViewModelに従属してしまいます。**
+
+```dart
+@freezed
+abstract class SearchState with _$SearchState {
+    const factory SearchState({
+        @Default('') String departure,
+        @Default('') String arrive,
+        @Default([]) List<String> via,
+        @Default(true) bool priorityIC,
+        @Default(true) bool reservedSeat,
+        // ...
+    }) = _SearchState;
+}
+
+@riverpod
+class SearchStateViewModel extends _$SearchStateViewModel {
+    SearchState build() => SearchState();
+}
+```
+
+ViewModelと呼ぶ単位は必ずしもNavigatorのrouterの単位に縛られる必要がないので、機能的単位での凝縮でよいですが、しかしながらこのような巨大な乗換案内の検索が単一のViewModelで表現されざるをえません。
+
+一方で、クリーンアーキテクチャとしては明快で、入力フォーム => ViewModel => UseCase => ... というクリーンアーキテクチャ的文法に基づいた見通しになります。
 
 ## RiverpodがFlutter界の状態管理デファクトスタンダード担った理由を考える
 
-第3章でも見てきましたが、Riverpodは
+これまで見てきた通り、Riverpodは
 
 - Jotai/Recoil的「形式的原子性」を追求する
 - Pinia的 意味論毎の「ストア管理」に舵を切る
@@ -239,3 +343,17 @@ Flutterは純粋関数潔癖症ではないので、いくつかの命令的動�
 なぜなら、初学者はどうやってProviderの関係や責務単位を設計すればよいか迷いますし、熟練者でもReactの背景を持たない人々しかいない世界ではRiverpodに状態の原子性を見出すこともまた難しいかもしれません。そして多くの従来のスマホアプリ開発者のうち、特にJetpack ComposeやSwift UIの状態管理理論を知らない人々、あるいはJetpack ComposeのViewModelに倒錯的疑問を抱かない人々は、StateNotifierをそのままViewModelと誤認してしまうかもしれません。
 
 これは、Riverpodが柔軟であるが故の罪、そう感じられます。汎用的に用いられるが故に、Providerの責務単位にぶれが生じさせうることは、メリットにもデメリットにもなりえます。
+
+## まとめ
+
+本章では、Flutterにおける「View層の不在」の原則と宣言的UIの本質、そしてRiverpodによる状態管理の柔軟性について解説しました。
+
+Flutterでは従来のMVVMやMVCのような「Viewを直接操作する」発想が通用せず、状態とUIの射影という構造が根本的な設計思想となっています。しかしその一方で、状態を命令的に変更する手段を完全に廃したわけでもなく、折衷によって成り立っていることを解説してきました。
+
+また、Riverpodは状態管理の粒度や責務分割においてクリーンアーキテクチャ的な用途にも用いれば、原子的状態管理のアプローチを許容しており、その柔軟性がデファクトスタンダードとなった理由でもあります。一方で、柔軟すぎるがゆえに設計指針が曖昧になりやすいという課題も存在します。
+
+結局のところ、どうすればよいかという点にあっては、
+
+- Flutterの宣言的原則と、その中にある命令的所作の矛盾とうまく付き合いながら宣言的に記述する
+- RiverpodはViewModelを禁じる訳では無いが、その機能責務の集中は避けるべきで、粒度を画面に縛られる必要もないので、あくまでそれは機能に対して行われるべき
+- 最終的にProviderの粒度の細分化を突き詰めれば、Recoil/Jotaiが目指すような原始的状態管理に帰結し、それはクリーンアーキテクチャに当てはめるとどうしても不可解にならざるをえないが、コンポーネントの再利用性の追求としてはそうあるべきで、Riverpodの真価はここで発揮される（し、ドキュメントはどちらかといえばこちら側の思想）
