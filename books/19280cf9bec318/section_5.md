@@ -1,5 +1,6 @@
 ---
 title: "第５章　Flutter&Riverpodにおけるアンチパターン"
+free: true
 ---
 
 ## 命令形指向を捨てよ、状態本位であれ

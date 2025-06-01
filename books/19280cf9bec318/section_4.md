@@ -1,5 +1,6 @@
 ---
 title: "第４章　Flutterにおける構造的転換"
+free: true
 ---
 
 
