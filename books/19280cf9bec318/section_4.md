@@ -174,13 +174,14 @@ class ModalWithChild extends HookWidget {
 
 このようにして、このウィジェットがMaterialAppの下とかにいれば、ダイアログを自身が管理する状態に従属させて表示させたりさせなかったりすることができます。状態を下から上にどうやって伝播させるかという話であれば、それこそRiverpodでDialogStateNotifierのようなものを作ればよいでしょう。
 
-この方法であれば、ダイアログは状態に従属し、さらにダイアログの操作は非同期処理としてCompleterを用いればNotifier側に返せるため、実際にビジネスロジックとダイアログが密接に関係する場合においては有効な手段です。これはダイアログにかかわらず、BottomModalSheetのようなものにも使えるでしょう。[1]
+この方法であれば、ダイアログは状態に従属し、さらにダイアログの操作は非同期処理としてCompleterを用いればNotifier側に返せるため、実際にビジネスロジックとダイアログが密接に関係する場合においては有効な手段です。これはダイアログにかかわらず、BottomModalSheetのようなものにも使えるでしょう。[^1]
+
+[^1]: 拙作のアプリ [dialog_state.dart](https://github.com/shiosyakeyakini-info/miria/blob/develop/lib/view/common/dialog/dialog_state.dart) と [dialog_scope.dart](https://github.com/shiosyakeyakini-info/miria/blob/develop/lib/view/common/dialog/dialog_scope.dart) において使用している方法です。あとで、より副作用として管理する方法も考察します。
+
 
 さらにビジネスロジックとUIが分離するため、テストも行いやすくなります。これだけ聞けばこちらのほうがよいのではないか？と思えてきます。
 
 実際にダイアログの表示待ちという非同期処理がビジネスロジックと頻繁に結びつくケースでは、このように命令的なAPIを使わずに宣言的、純粋関数的思考で`showDialog`を使わないことという選択肢があるわけです。では、他の命令的APIも、極論的にいえばすべてこのように宣言的にできないのでしょうか？
-
-[1]: 拙作のアプリ [dialog_state.dart](https://github.com/shiosyakeyakini-info/miria/blob/develop/lib/view/common/dialog/dialog_state.dart) と [dialog_scope.dart](https://github.com/shiosyakeyakini-info/miria/blob/develop/lib/view/common/dialog/dialog_scope.dart) において使用している方法です
 
 理論上は、引数以外の状態に依存せず、引数以外の状態を変更しないということは可能です。先ほどのダイアログの例もそうですし、
 
@@ -300,9 +301,9 @@ Flutterでは従来のMVVMやMVCのような「Viewを直接操作する」発�
 
 結局のところ、どうすればよいかという点にあっては、
 
-- Flutterの宣言的原則と、その中にある命令的所作の矛盾とうまく付き合いながら宣言的に記述する
-- RiverpodはViewModelを禁じる訳では無いが、その機能責務の集中は避けるべきで、粒度を画面に縛られる必要もないので、あくまでそれは機能に対して行われるべき
-- 最終的にProviderの粒度の細分化を突き詰めれば、Recoil/Jotaiが目指すような原始的状態管理に帰結します。
-- クリーンアーキテクチャはその本義に立ち返る必要があり、たまたま例示されていた表面的なUseCaseとかPresenterに囚われる必要がありません。Riverpod的な依存関係構築を適切に整理できれば、それは自然にクリーンアーキテクチャとなります。
+- Flutterの宣言的原則と、その中にある命令的所作の矛盾とうまく付き合いながら宣言的に記述すること。
+- RiverpodはViewModelを禁じる訳では無いが、その機能責務の集中は避けるべきで、粒度を画面に縛られる必要もないので、あくまでそれは機能に対して行われるべきであるということ。
+- 最終的にProviderの粒度の細分化を突き詰めれば、Recoil/Jotaiが目指すような原始的状態管理に帰結するということ。
+- クリーンアーキテクチャはその本義に立ち返る必要があり、たまたま例示されていた表面的なUseCaseとかPresenterに囚われる必要がありません。Riverpod的な依存関係構築を適切に整理できれば、それは自然にクリーンアーキテクチャとなっているはず。
 
 次の章では、もはやこれまでの議論からすれば「何度も」「口を酸っぱくして」言っていることにさえなりますが、あえてアンチパターンという側面でこれらに反するRiverpodの使い方や、Flutterの根本的誤解について考察していきます。

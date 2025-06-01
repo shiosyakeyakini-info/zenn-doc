@@ -228,7 +228,7 @@ abstract class SearchState with _$SearchState {
     const factory SearchState({
         @Default('') String departure,
         @Default('') String arrive,
-        [] List<String> via,
+        @Default([]) List<String> via,
         @Default(true) bool priorityIC,
         @Default(true) bool reservedSeat,
         // ...
@@ -324,7 +324,10 @@ ref.invalidate(searchProvider);
 ref.refresh(searchProvider)
 ```
 
+
 が登場します。これはプロバイダの明示的更新です。更新に含めて、プロバイダーの**破棄**を行います。この破棄という性質については、あとで詳しく解説します。
+
+`ref.invalidate` `ref.refresh`の違いは[Riverpodの公式ドキュメント](https://riverpod.dev/ja/docs/essentials/faq)に任せます。
 
 これを用いれば、当該のProviderが再評価されるので、
 
@@ -448,9 +451,9 @@ class InvalidateExampleWidget extends ConsumerWidget {
 
 この再更新(`ref.invalidate` `ref.refresh`)というのは破棄を伴うので、Notifierにおいては相当注意深く扱わなければなりませんし、破棄したあとに、他の副作用がどうあるべきかというのを排他制御的に見つめ直す必要があります。
 
-ところで、NotifierでないFutureを返すProviderではこのref.mountedを気にする必要はないのでしょうか？これはそもそも、副作用を起こして状態を内部で変える手段を持たないのですから、原理的に起こり得ないはずです。[1]
+ところで、NotifierでないFutureを返すProviderではこのref.mountedを気にする必要はないのでしょうか？これはそもそも、副作用を起こして状態を内部で変える手段を持たないのですから、原理的に起こり得ないはずです。[^1]
 
-[1]: たぶん……　Riverpodのソースを呼んだわけではないので絶対にないとはいいきれません
+[^1]: たぶん……　Riverpodのソースを呼んだわけではないので絶対にないとはいいきれません
 
 
 
