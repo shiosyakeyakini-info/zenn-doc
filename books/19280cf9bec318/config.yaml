@@ -6,7 +6,7 @@ summary: |
   ※ 本書はあとがき以外を無料で公開しています。パブリックレポジトリにあるので有料であることに強い意味はないですが、何か本書で洞察があれば、支援いただけるとうれしいです。
 topics: ["flutter", "riverpod"]
 published: false # falseだと下書き
-price: 500 # 有料の場合200〜5000
+price: 300 # 有料の場合200〜5000
 allow_override: true
 chapters:
   - introduction
