@@ -15,7 +15,7 @@ free: true
 
 下記の例では、たとえば「コピー」「貼り付け」の他に、翻訳とCopilotを押すと通信が始まり、ダイアログなりボトムモーダルシートなりで結果を表示する例を考えます。
 
-これは、無関係の翻訳機能とCopilotのチャット機能、同一のコンテキストメニューにあるからという理由だけで同じモデルに押し込まれています。そしてその操作もです。明らかに責務が分離されていません。
+これは、無関係の翻訳機能とCopilotのチャット機能が、同一のコンテキストメニューにあるからという理由だけで同じモデルに押し込まれています。そしてその操作もです。明らかに責務が分離されていません。
 
 ```dart
 @freezed
@@ -46,7 +46,7 @@ class ContextMenuNotifier extends _$ContextMenuNotifier {
         return ref.read(translateProvider).translate(
             language: state.language,
             text: state.text,
-        )
+        );
     }
 
     @mutation
@@ -71,7 +71,7 @@ class TranslateMenu extends ConsumerWidget {
 
         return switch() {
             // ...
-        }
+        };
 
     }
 }
@@ -107,7 +107,7 @@ class CopyMenu extends ConsumerWidget {
 
         return ListTile(
             onPressed: copy is PendingMutation ? null : copy.call()
-        )
+        );
     }
 }
 
@@ -122,12 +122,11 @@ class TranslateDialog extends ConsumerWidget {
     Widget build(BuildContext context) {
         // 責務の分離を考えれば、そもそも間にNotifierを噛ませる必要がなく、
         // 単に`translateProvider`を`watch`すれば済む話ですね。
-        // 
         final translate = ref.watch(translateProvider(language: language, text: text));
         return switch(translate.state) {
-            AsyncLoading(): Center(child: CircularProgresIndicator()),
-            AsyncData(:final value) =>
-        }
+            AsyncLoading() => Center(child: CircularProgressIndicator()),
+            AsyncData(:final value) => // ...
+        };
     }
 }
 ```
@@ -151,8 +150,8 @@ class CopyMenu extends ConsumerWidget {
                 await Clipboard.setData();
                 if(!context.mounted) return;
                 Navigator.of(context).pop();
-            }
-        ) 
+            },
+        );
     }
 }
 ```
@@ -181,8 +180,8 @@ class DepartureNotifier extends _$DepartureNotifier {
 
     // 入力補完をする
     @mutation
-    Future<void> completation() {
-        ref.read(apiClientProvider).completation(CompletationRequest(text: state));
+    Future<void> completion() {
+        ref.read(apiClientProvider).completion(CompletionRequest(text: state));
     }
 }
 
@@ -269,8 +268,8 @@ class DepartureNotifier extends _$DepartureNotifier {
 
     // 入力補完をする
     @mutation
-    Future<void> completation() {
-        ref.read(apiClientProvider).completation(CompletationRequest(text: state));
+    Future<void> completion() {
+        ref.read(apiClientProvider).completion(CompletionRequest(text: state));
     }
 }
 
@@ -404,22 +403,23 @@ class InvalidateExampleWidget extends ConsumerWidget {
         title: const Text('Invalidate Example'),
       ),
       body: Center(
-          child: switch (count) {
-        AsyncLoading() => const CircularProgressIndicator(),
-        AsyncError() => const Text('Error occurred'),
-        AsyncData(:final value) =>
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text('Count: $value'),
-              ElevatedButton(
-                onPressed: () => ref.invalidate(invalidateExampleProvider),
-                child: const Text('Invalidate'),
-              ),
-            ],
-          ),
-         AsyncValue() => SizedBox.shrink(),
-      }),
+        child: switch (count) {
+          AsyncLoading() => const CircularProgressIndicator(),
+          AsyncError() => const Text('Error occurred'),
+          AsyncData(:final value) =>
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text('Count: $value'),
+                ElevatedButton(
+                  onPressed: () => ref.invalidate(invalidateExampleProvider),
+                  child: const Text('Invalidate'),
+                ),
+              ],
+            ),
+          AsyncValue() => SizedBox.shrink(),
+        },
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
           await ref.read(invalidateExampleProvider.notifier).increment();
@@ -468,7 +468,7 @@ sealed class AuthenticationState with _$AuthenticationState {
     const factory AuthenticationState.notLogin() = NotLogin;
     const factory AuthenticationState.logined({
         required User user,
-    }) = Logined,
+    }) = Logined;
 }
 
 @freezed
@@ -486,7 +486,7 @@ sealed class SignupState with _$SignupState {
         @Default('') String userId,
         @Default('') String password,
         @Default('') String mailAddress,
-    }) = MainAuthentication,
+    }) = MainAuthentication;
 
     /// 本登録
     const factory SignupState.definitive({
@@ -495,7 +495,7 @@ sealed class SignupState with _$SignupState {
         @Default('') String address,
         @Default('') Sexual sex,
         // ...
-    }) = Definitive
+    }) = Definitive;
 
     const factory SignupState.authenticateTwoAuth({
         required Provisional data,
@@ -504,7 +504,7 @@ sealed class SignupState with _$SignupState {
         @Default('') Sexual sex,
         // ...
         @Default('') String totpSecret,
-    })
+    }) = AuthenticateTwoAuth;
 }
 
 ```
@@ -685,14 +685,14 @@ sequenceDiagram
 ```dart
 ref.listen(bookNotifierProvider.loadNext, (_, next) {
     switch(next) {
-        MutationError(:final error, :final stackTrace):
+        case MutationError(:final error, :final stackTrace):
             commonError(error, stackTrace);
         default:
     }
 });
 ref.listen(bookNotifierProvider, (_, next) {
     switch(next) {
-        AsyncError(:final error, :final stackTrace)
+        case AsyncError(:final error, :final stackTrace):
             commonError(error, stackTrace);
     }
 });
@@ -727,7 +727,6 @@ ref.listen(bookNotifierProvider,
 
 もし、特定のエラー時は透過的に処理を行うエラーハンドリングがある場合、たとえばセッション切れの場合にログイン画面に戻すような場合を考えると、
 
-```dart
 ```dart
 // エラー状態を管理するクラス
 @freezed
