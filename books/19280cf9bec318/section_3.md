@@ -23,6 +23,7 @@ abstract class ContextMenuState with _$ContextMenuState {
     const factory ContextMenuState({
         @Default(Language.en) Language language,
         @Default(CopilotModel.chatGPT4o) CopilotModel copilotModel,
+        required String text,
     }) = _ContextMenuState;
 }
 
@@ -41,16 +42,16 @@ class ContextMenuNotifier extends _$ContextMenuNotifier {
     Future<void> paste() {}
 
     @mutation
-    Future<String> translate(Language language) {
+    Future<String> translate() {
         return ref.read(translateProvider).translate(
-            language: language,
+            language: state.language,
             text: state.text,
         )
     }
 
     @mutation
-    Future<String> askCopilot(CopilotModel model) {
-        return ref.read(copilotProvider(model)).ask(message: state.text);
+    Future<String> askCopilot(String text) {
+        return ref.read(copilotProvider(state.model)).ask(message: state.text);
     }
 }
 
@@ -242,7 +243,7 @@ class SearchStateViewModel extends _$SearchStateViewModel {
 
 とすることが必ずしも悪いというわけでもありません。例えば簡易入力フォームの要件があとから出てきたとかであれば、それはそのときに状態に原子化をしてもよいのです。こちらはこちらで、見た目上、意味論的にも同じようにみえる塊がモデルとして投影されているので、複雑な依存関係を考慮せずに済むともいえます。
 
-さらに、既存のMVVM/クリーンアーキテクチャからの移行という側面がもしあれば、全く異なる分散型依存管理を要求する原子的スタイルは、設計を白紙からやり直すようなレベルの大仕事になります。あるいは、クリーンアーキテクチャをFlutter&Riverpodに当てはめて使うのだという話をすれば、このような機能凝縮は避けられません。この点については次の章で詳しく見ていきます。
+さらに、既存のMVVM/クリーンアーキテクチャからの移行という側面がもしあれば、全く異なる分散型依存管理を要求する原子的スタイルは、設計を白紙からやり直すようなレベルの大仕事になります。この点については次の章で詳しく見ていきます。
 
 全員がReact&Recoil/JotaiやVue.js&Atomic Designの経験があり、状態管理の原子性について論じることができて、それに基づいて実装するのであれば、Atom的発想による機能責務はある意味で再利用性を求めた理想といえます。
 
@@ -618,6 +619,59 @@ class BookList extends HookConsumerWidget {
 フロントエンドにおけるほとんどの処理は非同期処理でありながら、従来の多くのライブラリやフレームワークではこれを上手に扱うことを苦手としていました。しかし、RiverpodではFutureProviderやAsyncNotifierProviderを上手に活用することで、進行状況、エラー、完了状態を型安全的に、かつ宣言的に扱うことができるのです。さらにローディングやエラー時の制御、重複実行の防止も簡単に行うことができ、複雑な非同期処理もシンプルに状態管理として扱うことができます。
 
 特にMutationに関してはRiverpod 3.0からの実験的な機能ですが、これまではAsyncValueの状態を自分で保持する必要があったため、これを不要にして本質的な副作用処理に集中できるようになる機能です。
+
+### 非同期とイミュータブル
+
+1章で、イミュータブルであることはスレッドセーフであるといいましたが、なぜでしょうか。
+
+```dart
+    @mutation
+    Future<void> loadNext() async {
+        final currentState = await future;
+        final lastBookId = currentState.last.id;
+        state = AsyncData([
+            ...currentState,
+            await ref.read(apiClientProvider).getBooks({untilId: lastBookId}),
+        ]);
+    }
+```
+
+先ほどの例で、もし`currentState`がミュータブルだったらどうでしょうか。どこかのタイミングで誰かが参照先の値が変えられてしまうかもわからなくなってしまい、一旦保持した変数が追跡不可能になってしまいます。
+
+イミュータブルであることが、非同期処理が一貫することに対して保証を与えているといえます。
+
+ところで、イミュータブルであるということは、当然ですがその値は変わることがないので、この途中で`state`が変更されていたとしてもそれがロールバックしてしまいます。例えば、loadNext()が実行されている途中に`clear`というメソッドが呼ばれることを考えてみます。
+
+```mermaid
+sequenceDiagram
+
+    participant loadNext()
+    participant state
+    participant clear()
+
+    state->>loadNext(): currentState = (await future)
+    clear()->>state: state = AsyncData([])
+    loadNext()->>loadNext(): 非同期処理
+    loadNext()->>state: state = AsyncData([...currentState, newState])
+ 
+```
+
+このような流れになってしまい、clearの効力が崩れてしまいます。複数の非同期処理が並列しなければ上記の書き方でも問題ありませんが、複数の並列処理が同時に動作しうる場合では、常に現在の値を取得するようにしなければならず、
+
+```dart
+    @mutation
+    Future<void> loadNext() async {
+        final currentState = await future;
+        final lastBookId = currentState.last.id;
+        final books = await ref.read(apiClientProvider).getBooks({untilId: lastBookId});
+
+        state = AsyncData([...(await future), ...books]);
+    }
+```
+
+が適切です。または、前述のように複数の副作用が並列して動作しうることを拒絶するには、ref.invalidateで破棄してしまうのも一つの方法です。
+
+値はイミュータブルで不変であることは、非同期の状態管理にとっても途中で値が変えられてしまう可能性がないことを保証する一方で、誤って使用すれば過去の値にロールバックした状態を発生させてしまうこともあるということです。
 
 ### 共通エラー処理
 
