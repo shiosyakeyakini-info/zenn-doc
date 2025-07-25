@@ -7,7 +7,7 @@ free: true
 
 第1章では、関数型プログラミングについて論じました。  
 
-第2章では、これらの概念がUIにおいてどのように適用されるか、すなはち**UIを関数として扱うとはどういうことか**を考察します。
+第2章では、これらの概念がUIにおいてどのように適用されるか、すなわち**UIを関数として扱うとはどういうことか**を考察します。
 
 UIにおいて純粋関数性を語るとは、「入力が同じであれば、常に同じUI（Widgetツリー）が返る」ことを意味します。  
 Flutterにおいてこれは非常に自然な発想であり、StatelessWidgetやConsumerWidgetのように、`build`メソッドに与える引数が固定されていれば、あるいはBuildContextから導出される値が固定されていれば、UIも同じく一定であるべきという思想です。
@@ -203,7 +203,7 @@ class Sample extends HookWidget {
         useEffect(() {
             void listener() => state.value = controller.text;
             controller.addListener(listener);
-            return controller.removeListener;
+            return () => controller.removeListener(listener);
         });
 
         return TextField(
