@@ -96,4 +96,19 @@ published: false # 公開設定（falseにすると下書き）
 
 ### 7. Dart AST
 
+#### セッションメモ
+
 - analyzer ASTとKernel ASTがあって、両方の共通のパッケージが`_fe_analyzer_shared`
+    - 最近見たissueに、[_fe_analyzer_sharedのバージョンがモノレポ内で異なるとcustom_lintが変だよ](https://github.com/invertase/dart_custom_lint/issues/79)というのがあったのですが、`_fe_analyzer_shared`が何なのか、`pubspec.lock`では真っ先に出てくるので目にはするけどよく分かっていなかったのでした。そんな役割やったんやね！となりました
+- `Scanner`や`Parser`などがあり、Parserは「ここから〇〇だよ」とか「見つかったよ」を逐次イベント送信する。
+- `analyzer`パッケージはASTの情報に加えて元のソースの位置を持っているので、CST（具象構文木）に近い
+- analyzerの役割としては型情報などが欲しいが、ASTは持っていない。このためにanalyzerではResolvedAST（型や識別子、Elementを持つ）になる
+- Elementは意味情報を保持する
+- ASTは単純な構文木の解析だから文字列リテラルのコードを`parseString`できるが、Resolved ASTはファイルからの入力しか受け付けない
+    - インポートとかの文脈（コンテキスト）が必要になる以上ファイルでないといけないというのは納得　型とかは別ファイルを読まないといけないわけだしそれって相対でも書かれるし
+
+#### 感想
+
+ちょっとしたbuild_runnerを自分で作ったり、custom_lintを作ったりすることはあった割に、この辺の理解がかなりあやふやだったので、個人的には一番ためになったセッションでした。
+
+DartはリフレクションできるがFlutterはリフレクションできないという特性上、どうしても痒い所に手が届かないことがあるので、
